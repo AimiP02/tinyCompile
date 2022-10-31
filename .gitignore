@@ -1,0 +1,9 @@
+# Test samples
+/test.c
+/test
+
+# Binary file
+*.exe
+
+# Vscode file
+.vscode/
