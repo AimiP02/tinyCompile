@@ -4,6 +4,9 @@
 
 # Binary file
 *.exe
+*.out
+*.o
+*.S
 
 # Vscode file
 .vscode/
