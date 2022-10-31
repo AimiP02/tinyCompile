@@ -29,10 +29,59 @@ enum {
     OPEN, READ, CLOS, PRTF, MALC, MSET, MCMP, EXIT
 };
 
+// Tokens and Classed
+enum {
+    Num = 128,
+    Fun, Sys, Glo, Loc, Id,
+    Char, Else, Enum, If, Int, Return, Sizeof, While,
+    Assign, Cond, Lor, Lan, Or, Xor, And, Equ, Neq, Lt, Gt, Le, Ge,
+    Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+};
+
+// Identifier
+int token_val;
+int *current_id,
+    *symbols;
+
+enum {
+    Token,
+    Hash,
+    Name,
+    Type,
+    Class,
+    Value,
+    Btype,
+    BClass,
+    BValue,
+    IdSize
+};
 
 // Read file into one token
 void next() {
-    token = *src++;
+    char *last_pos;
+    int hash;
+
+    while (token = *src) {
+        src++;
+        if (token == '\n') {
+            line++;
+        }
+        // define include pragma ... it does'n have ability to parse these words
+        else if (token == '#') {
+            while (*src != 0 && *src != '\n') {
+                src++;
+            }
+        }
+        else if (('a' <= token && token <= 'z') || ('A' <= token && token <= 'Z') || (token == '_')) {
+            last_pos = src - 1;
+            hash = token;
+            while(('a' <= *src && *src <= 'z') || ('A' <= *src && *src <= 'Z') || (*src == '_')) {
+                hash = hash * 137 + *src;
+                src++;
+            }
+            
+        }
+    }
     return;
 }
 
