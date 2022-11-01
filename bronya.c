@@ -18,6 +18,10 @@ char *data;        // data segment
 // Registers
 int *PC, *BP, *SP, AX, cycle;
 
+int token_val;      // value of current token
+int *current_id,    // current parse ID 
+    *symbols;       // symbol table
+
 // Instruction
 enum {
     LEA, IMM, JMP, CALL, JZ, JNZ, ENT, ADJ, LEV, LI, LC, SI, SC,
@@ -39,10 +43,6 @@ enum {
 };
 
 // Identifier
-int token_val;
-int *current_id,
-    *symbols;
-
 enum {
     Token,
     Hash,
@@ -63,23 +63,228 @@ void next() {
 
     while (token = *src) {
         src++;
+        // New line
         if (token == '\n') {
             line++;
         }
-        // define include pragma ... it does'n have ability to parse these words
+        // define include pragma ... it does'n have ability to parse these words :(
         else if (token == '#') {
             while (*src != 0 && *src != '\n') {
                 src++;
             }
         }
+        // Parse identifier
         else if (('a' <= token && token <= 'z') || ('A' <= token && token <= 'Z') || (token == '_')) {
             last_pos = src - 1;
             hash = token;
-            while(('a' <= *src && *src <= 'z') || ('A' <= *src && *src <= 'Z') || (*src == '_')) {
-                hash = hash * 137 + *src;
+            while (('a' <= *src && *src <= 'z') || ('A' <= *src && *src <= 'Z') || (*src == '_')) {
+                hash = hash * 147 + *src;
                 src++;
             }
+            // Find existing identifier: Linear search
+            current_id = symbols;
+            while (current_id[Token]) {
+                if (current_id[Hash] == hash && !memcmp((char *)current_id[Name], (char *)last_pos, src - last_pos)) {
+                    // Found one, return 
+                    token = current_id[Token];
+                    return ;
+                }
+                current_id = current_id + IdSize;
+            }
+            // Store new ID
+            current_id[Name] = (int)last_pos;
+            current_id[Hash] = hash;
+            token = current_id[Token] = Id;
+            return ;
+        }
+        // Parse number
+        else if ('0' <= token && token <= '9') {
+            // Three kinds of number: dec(123), oct(173), hex(0x7B)
+            token_val = token - '0';
+            if (token_val > 0) {
+                while ('0' <= *src && *src <= '9') {
+                    token_val = token_val * 10 + *src++ - '0';
+                }
+            }
+            else {
+                // oct and hex
+                if (*src == 'x' || *src == 'X') {
+                    // hex
+                    token = *++src;
+                    while (('0' <= token && token <= '9') || ('a' <= token && token <= 'f') || ('A' <= token && token <= 'Z')) {
+                        token_val = token_val * 16 + (token & 15) + (token >= 'A' ? 9 : 0);
+                        token = *++src;
+                    }
+                }
+                else {
+                    // oct
+                    while('0' <= *src && *src <= '7') {
+                        token_val = token_val * 8 + *src++ - '0';
+                    }
+                }
+            }
+
+            token = Num;
+            return ;
+        }
+        // Parse string
+        else if (token == '"' || token == '\'') {
+            last_pos = data;
+            while (*src != 0 && *src != token) {
+                token_val = *src++;
+                if (token_val == '\\') {
+                    token_val = *src++;
+                    if (token_val == 'n') {
+                        token_val = '\n';
+                    }
+                }
+                if (token == '"') {
+                    *data++ = token_val;
+                }
+            }
+            src++;
             
+            if (token == '"') {
+                token_val = (int)last_pos;
+            }
+            else {
+                token = Num;
+            }
+
+            return ;
+        }
+        // Parse annotation
+        else if (token == '/') {
+            if (*src == '/') {
+                while (*src != 0 && *src != '\n') {
+                    src++;
+                }
+            }
+            else {
+                // it isn't annotation, but an operation
+                token = Div;
+                return ;
+            }
+        }
+        // Parse operation
+        else if (token == '=') {
+            // parse '==' and '='
+            if (*src == '=') {
+                token = Equ;
+                src++;
+            }
+            else {
+                token = Assign;
+            }
+            return ;
+        }
+        else if (token == '+') {
+            // parse '++' and '+'
+            if (*src == '+') {
+                token = Inc;
+                src++;
+            }
+            else {
+                token = Add;
+            }
+            return ;
+        }
+        else if (token == '-') {
+            // parse '--' and '-'
+            if (*src == '-') {
+                token = Dec;
+                src++;
+            }
+            else {
+                token = Sub;
+            }
+            return ;
+        }
+        else if (token == '*') {
+            token = Mul;
+            return ;
+        }
+
+        // Div has been handled
+
+        else if (token == '%') {
+            token = Mod;
+            return ;
+        }
+        else if (token == '&') {
+            // parse '&&' and '&'
+            if (*src == '&') {
+                token = Lan;
+                src++;
+            }
+            else {
+                token = And;
+            }
+            return ;
+        }
+        else if (token == '|') {
+           // parse '||' and '|'
+           if (*src == '|') {
+               token = Lor;
+               src++; 
+           }
+           else {
+               token = Or;
+           }
+           return ;
+        }
+        else if (token == '!') {
+            // parse '!=' and '!'
+            if (*src == '=') {
+                token = Neq;
+                src++;
+            }
+            return ;
+        }
+        else if (token == '^') {
+            token = Xor;
+            return ;
+        }
+        else if (token == '<') {
+            // parse '<=' '<<' '<'
+            if (*src == '=') {
+                token = Le;
+                src++;
+            }
+            else if (*src == '<') {
+                token = Shl;
+                src++;
+            }
+            else {
+                token = Lt;
+            }
+            return ;
+        }
+        else if (token == '>') {
+            // parse '>=' '>>' '>'
+            if (*src == '=') {
+                token = Ge;
+                src++;
+            }
+            else if (*src == '>') {
+                token = Shr;
+                src++;
+            }
+            else {
+                token = Gt;
+            }
+            return ;
+        }
+        else if (token == '?') {
+            token = Cond;
+            return ;
+        }
+        else if (token == '[') {
+            token = Brak;
+            return ;
+        }
+        else if (token == '~' || token == ';' || token == '{' || token == '}' || token == '(' || token == ')' || token == ']' || token == ',' || token == ':') {
+            return ;
         }
     }
     return;
