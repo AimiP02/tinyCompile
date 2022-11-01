@@ -22,6 +22,8 @@ int token_val;      // value of current token
 int *current_id,    // current parse ID 
     *symbols;       // symbol table
 
+int *idmain;
+
 // Instruction
 enum {
     LEA, IMM, JMP, CALL, JZ, JNZ, ENT, ADJ, LEV, LI, LC, SI, SC,
@@ -54,6 +56,12 @@ enum {
     BClass,
     BValue,
     IdSize
+};
+
+enum {
+    CHAR,
+    INT,
+    PTR
 };
 
 // Read file into one token
@@ -371,20 +379,6 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    if (!(src = old_src = malloc(poolsize))) {
-        printf("could not malloc(%d) for source area\n", poolsize);
-        return -1;
-    }
-
-    // read the source file
-    if ((i = read(fd, src, poolsize-1)) <= 0) {
-        printf("read() returned %d\n", i);
-        return -1;
-    }
-
-    src[i] = 0; // add EOF character
-    close(fd);
-
     // allocate memory for virtual machine
     if (!(text = old_text = malloc(poolsize))) {
         printf("could not malloc(%d) for text area\n", poolsize);
@@ -398,28 +392,54 @@ int main(int argc, char **argv)
         printf("could not malloc(%d) for stack area\n", poolsize);
         return -1;
     }
+    if (!(symbols = malloc(poolsize))) {
+        printf("could not malloc(%d) for symbol area\n", poolsize);
+        return -1;
+    }
 
     // initialize segments
     memset(text, 0, poolsize);
     memset(data, 0, poolsize);
     memset(stack, 0, poolsize);
+    memset(symbols, 0, poolsize);
 
     // initialize stack and register
     BP = SP = (int *)((int)stack + poolsize);
     AX = 0;
 
-    i = 0;
+    src = "char else enum if int return sizeof while "
+          "open read close printf malloc memset memcmp exit void main";
+    
+    i = Char;
+    while (i <= While) {
+        next();
+        current_id[Token] = i++;
+    }
 
-    text[i++] = IMM;
-    text[i++] = 10;
-    text[i++] = PUSH;
-    text[i++] = IMM;
-    text[i++] = 20;
-    text[i++] = ADD;
-    text[i++] = PUSH;
-    text[i++] = EXIT;
+    i = OPEN;
+    while (i <= EXIT) {
+        next();
+        current_id[Class] = Sys;
+        current_id[Type] = INT;
+        current_id[Value] = i++;
+    }
 
-    PC = text;
+    next(); current_id[Token] = Char;
+    next(); idmain = current_id;
+
+    if (!(src = old_src = malloc(poolsize))) {
+        printf("could not malloc(%d) for source area\n", poolsize);
+        return -1;
+    }
+
+    // read the source file
+    if ((i = read(fd, src, poolsize-1)) <= 0) {
+        printf("read() returned %d\n", i);
+        return -1;
+    }
+
+    src[i] = 0; // add EOF character
+    close(fd);
 
     program();
     return eval();
