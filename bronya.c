@@ -27,6 +27,8 @@ int *idmain;
 int base_type;
 int expr_type;
 
+int index_of_BP;
+
 // Instruction
 enum {
     LEA,
@@ -386,9 +388,183 @@ void enumDeclaration() {
 }
 
 void parameterDeclaration() {
+    int type;
+    int params;
+
+    params = 0;
+
+    while ( token != ')' ) {
+        type = INT;
+        // (int param_1, ...)
+        if ( token == Int ) { match( Int ); }
+        // (char param_1, ...)
+        else if ( token == Char ) {
+            type = CHAR;
+            match( Char );
+        }
+        // (int or char **...*param_1, ...)
+        while ( token == Mul ) {
+            match( Mul );
+            type = type + PTR;
+        }
+
+        // parameter name
+        if ( token != Id ) {
+            printf( "%d: bad parameter declaration\n", line );
+            exit( -1 );
+        }
+        if ( current_id[Class] == Loc ) {
+            printf( "%d: duplicate parameter declaration\n", line );
+            exit( -1 );
+        }
+        match( Id );
+
+        current_id[BClass] = current_id[Class];
+        current_id[Class]  = Loc;
+
+        current_id[Btype] = current_id[Type];
+        current_id[Type]  = type;
+
+        current_id[BValue] = current_id[Value];
+        current_id[Value]  = params++;
+
+        if ( token == ',' ) { match( ',' ); }
+    }
+
+    // Before call function, this compiler will push parameters forwardly.
+    // Then accroding to defination of CALL, it will push the next instruction's address to
+    // the stack.
+    // Finally, callee's function will push the EBP to the stack.
+    // So the distance is 'params + 1'
+    index_of_BP = params + 1;
+}
+
+void statement() {
+    int *area_a, *area_b;
+
+    if ( token == If ) {
+        match( If );
+        match( '(' );
+        expression( Assign );
+        match( ')' );
+
+        *++text = JZ;
+        area_b  = ++text;
+
+        statement();
+
+        if ( token == Else ) {
+            match( Else );
+
+            *area_b = (int)( text + 3 );
+            *++text = JMP;
+            area_b  = ++text;
+
+            statement();
+        }
+
+        *area_b = (int)( text + 1 );
+    }
+    else if ( token == While ) {
+        match( While );
+
+        area_a = text + 1;
+
+        match( '(' );
+        expression( Assign );
+        match( ')' );
+
+        *++text = JZ;
+        area_b  = ++text;
+
+        statement();
+
+        *++text = JMP;
+        *++text = (int)area_a;
+        *area_b = (int)( text + 1 );
+    }
+    else if ( token == Return ) {
+        match( Return );
+
+        if ( token != ';' ) { expression( Assign ); }
+
+        match( ';' );
+
+        *++text = LEV;
+    }
+    else if ( token == '{' ) {
+        match( '{' );
+
+        while ( token != '}' ) {
+            statement();
+        }
+
+        match( '}' );
+    }
+    else if ( token == ';' ) {
+        match( ';' );
+    }
+    else {
+        expression( Assign );
+        match( ';' );
+    }
 }
 
 void bodyDeclaration() {
+    // Bronya Compiler stipulates all variables must declare on the top of function.
+
+    int pos_local;
+    int type;
+
+    pos_local = index_of_BP;
+
+    while ( token == Int || token == Char ) {
+        base_type = ( token == Int ) ? INT : CHAR;
+        match( token );
+
+        while ( token != ';' ) {
+            type = base_type;
+            while ( token == Mul ) {
+                match( Mul );
+                type = type + PTR;
+            }
+
+            if ( token != Id ) {
+                // invalid declaration
+                printf( "%d: bad global declaration\n", line );
+                exit( -1 );
+            }
+            if ( current_id[Class] ) {
+                // identifier exists
+                printf( "%d: duplicate global declaration\n", line );
+                exit( -1 );
+            }
+
+            match( Id );
+
+            current_id[BClass] = current_id[Class];
+            current_id[Class]  = Loc;
+
+            current_id[Btype] = current_id[Type];
+            current_id[Type]  = type;
+
+            current_id[BValue] = current_id[Value];
+            current_id[Value]  = ++pos_local;
+
+            if ( token == ',' ) { match( ',' ); }
+        }
+
+        match( ';' );
+    }
+
+    *++text = ENT;
+    *++text = pos_local - index_of_BP;
+
+    while ( token != '}' ) {
+        statement();
+    }
+
+    *++text = LEV;
 }
 
 void functionDeclaration() {
@@ -491,6 +667,7 @@ void program() {
 int eval() {
     int option;
     int *tmp;
+
     while ( 1 ) {
         option = *PC++;
 
