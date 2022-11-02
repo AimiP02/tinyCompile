@@ -616,8 +616,246 @@ void expression( int level ) {
         }
     }
 
+    // Binary operator and postfix operators
     while ( token >= level ) {
-        
+        type = expr_type;
+        // Assignment
+        if ( token == Assign ) {
+            match( Assign );
+
+            if ( *text == LC || *text == LI ) { *text = PUSH; }
+            else {
+                printf( "%d: bad lvalue in assignment\n", line );
+                exit( -1 );
+            }
+            expression( Assign );
+
+            expr_type = type;
+
+            *++text = ( expr_type == CHAR ) ? SC : SI;
+        }
+        // Postfix operator
+        else if ( token == Cond ) {
+            match( Cond );
+
+            *++text = JZ;
+            addr    = ++text;
+
+            expression( Assign );
+
+            if ( token == ':' ) { match( ':' ); }
+            else {
+                printf( "%d: missing colon in conditional\n", line );
+                exit( -1 );
+            }
+
+            *addr   = (int)( text + 3 );
+            *++text = JMP;
+            addr    = ++text;
+
+            expression( Cond );
+            *addr = (int)( text + 1 );
+        }
+        // Logical operator
+        else if ( token == Lor ) {
+            match( Lor );
+            *++text = JNZ;
+            addr    = ++text;
+            expression( Lan );
+            *addr     = (int)( text + 1 );
+            expr_type = INT;
+        }
+        else if ( token == Lan ) {
+            match( Lan );
+            *++text = JZ;
+            addr    = ++text;
+            expression( Or );
+            *addr     = (int)( text + 1 );
+            expr_type = INT;
+        }
+        else if ( token == Or ) {
+            match( Or );
+            *++text = PUSH;
+            expression( Xor );
+            *++text   = OR;
+            expr_type = INT;
+        }
+        else if ( token == Xor ) {
+            match( Xor );
+            *++text = PUSH;
+            expression( And );
+            *++text   = XOR;
+            expr_type = INT;
+        }
+        else if ( token == And ) {
+            match( And );
+            *++text = PUSH;
+            expression( Equ );
+            *++text   = AND;
+            expr_type = INT;
+        }
+        else if ( token == Equ ) {
+            match( Equ );
+            *++text = PUSH;
+            expression( Neq );
+            *++text   = NE;
+            expr_type = INT;
+        }
+        else if ( token == Neq ) {
+            match( Neq );
+            *++text = PUSH;
+            expression( Lt );
+            *++text   = NE;
+            expr_type = INT;
+        }
+        else if ( token == Lt ) {
+            match( Lt );
+            *++text = PUSH;
+            expression( Shl );
+            *++text   = LT;
+            expr_type = INT;
+        }
+        else if ( token == Gt ) {
+            match( Gt );
+            *++text = PUSH;
+            expression( Shl );
+            *++text   = GT;
+            expr_type = INT;
+        }
+        else if ( token == Le ) {
+            match( Le );
+            *++text = PUSH;
+            expression( Shl );
+            *++text   = LE;
+            expr_type = INT;
+        }
+        else if ( token == Ge ) {
+            match( Ge );
+            *++text = PUSH;
+            expression( Shl );
+            *++text   = GE;
+            expr_type = INT;
+        }
+        else if ( token == Shl ) {
+            match( Shl );
+            *++text = PUSH;
+            expression( Add );
+            *++text   = SHL;
+            expr_type = INT;
+        }
+        else if ( token == Shr ) {
+            match( Shr );
+            *++text = PUSH;
+            expression( Add );
+            *++text   = SHR;
+            expr_type = INT;
+        }
+        else if ( token == Add ) {
+            match( Add );
+            *++text = PUSH;
+            expression( Mul );
+
+            expr_type = type;
+            if ( expr_type > PTR ) {
+                *++text = PUSH;
+                *++text = IMM;
+                *++text = sizeof( int );
+                *++text = MUL;
+            }
+            *++text = ADD;
+        }
+        else if ( token == Sub ) {
+            match( Sub );
+            *++text = PUSH;
+            expression( Mul );
+
+            if ( type > PTR && type == expr_type ) {
+                *++text   = SUB;
+                *++text   = PUSH;
+                *++text   = IMM;
+                *++text   = sizeof( int );
+                *++text   = DIV;
+                expr_type = INT;
+            }
+            else if ( type > PTR ) {
+                *++text   = PUSH;
+                *++text   = IMM;
+                *++text   = sizeof( int );
+                *++text   = MUL;
+                *++text   = SUB;
+                expr_type = type;
+            }
+            else {
+                *++text   = SUB;
+                expr_type = type;
+            }
+        }
+        else if ( token == Mul ) {
+            match( Mul );
+            *++text = PUSH;
+            expression( Inc );
+            *++text   = MUL;
+            expr_type = type;
+        }
+        else if ( token == Div ) {
+            match( Div );
+            *++text = PUSH;
+            expression( Inc );
+            *++text   = DIV;
+            expr_type = type;
+        }
+        else if ( token == Mod ) {
+            match( Mod );
+            *++text = PUSH;
+            expression( Inc );
+            *++text   = MOD;
+            expr_type = type;
+        }
+        else if ( token == Inc || token == Dec ) {
+            if ( *text == LI ) {
+                *text   = PUSH;
+                *++text = LI;
+            }
+            else if ( *text == LC ) {
+                *text   = PUSH;
+                *++text = LC;
+            }
+            else {
+                printf( "%d: bad value in increment\n", line );
+                exit( -1 );
+            }
+
+            *++text = PUSH;
+            *++text = IMM;
+            *++text = ( expr_type > PTR ) ? sizeof( int ) : sizeof( char );
+            *++text = ( token == Inc ) ? ADD : SUB;
+            *++text = ( expr_type == CHAR ) ? SC : SI;
+            *++text = PUSH;
+            *++text = IMM;
+            *++text = ( expr_type > PTR ) ? sizeof( int ) : sizeof( char );
+            *++text = ( token == Inc ) ? SUB : ADD;
+            match( token );
+        }
+        else if ( token == Brak ) {
+            match( Brak );
+            *++text = PUSH;
+            expression( Assign );
+            match( ']' );
+
+            if ( type > PTR ) {
+                *++text = PUSH;
+                *++text = IMM;
+                *++text = sizeof( int );
+                *++text = MUL;
+            }
+            else if ( type < PTR ) {
+                printf( "%d: pointer type expected\n", line );
+                exit( -1 );
+            }
+            expr_type = type - PTR;
+            *++text   = ADD;
+            *++text   = ( expr_type == CHAR ) ? LC : LI;
+        }
     }
 }
 
@@ -1067,6 +1305,7 @@ int eval() {
 
 int main( int argc, char **argv ) {
     int i, fd;
+    int *tmp;
 
     argc--;
     argv++;
@@ -1103,7 +1342,7 @@ int main( int argc, char **argv ) {
     memset( stack, 0, poolsize );
     memset( symbols, 0, poolsize );
 
-    // initialize stack and register
+    // initialize stacksize and register
     BP = SP = (int *)( (int)stack + poolsize );
     AX      = 0;
 
@@ -1129,11 +1368,16 @@ int main( int argc, char **argv ) {
     next();
     idmain = current_id;
 
+    // read the source file
+    if ( ( fd = open( *argv, 0 ) ) < 0 ) {
+        printf( "could not open(%s)\n", *argv );
+        return -1;
+    }
+
     if ( !( src = old_src = malloc( poolsize ) ) ) {
         printf( "could not malloc(%d) for source area\n", poolsize );
         return -1;
     }
-
     // read the source file
     if ( ( i = read( fd, src, poolsize - 1 ) ) <= 0 ) {
         printf( "read() returned %d\n", i );
@@ -1144,5 +1388,20 @@ int main( int argc, char **argv ) {
     close( fd );
 
     program();
+
+    if ( !( PC = (int *)idmain[Value] ) ) {
+        printf( "main() not defined\n" );
+        return -1;
+    }
+
+    // final initial stack
+    SP    = (int *)( (int)stack + poolsize );
+    *--SP = EXIT;
+    *--SP = PUSH;
+    tmp   = SP;
+    *--SP = argc;
+    *--SP = (int)argv;
+    *--SP = (int)tmp;
+
     return eval();
 }
