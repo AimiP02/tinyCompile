@@ -347,15 +347,277 @@ void next() {
     return;
 }
 
-void expression( int level ) {
-    // do nothing
-}
-
 void match( int new_token ) {
     if ( token == new_token ) { next(); }
     else {
         printf( "%d: expected token: %d\n", line, new_token );
         exit( -1 );
+    }
+}
+
+void expression( int level ) {
+    int *id;    // Identifier
+    int params; // Function parameters
+    int type;   // Type
+    int *addr;  // Address
+
+    {
+        if ( !token ) {
+            printf( "%d: unexpected token EOF of expression\n", line );
+            exit( -1 );
+        }
+        // If token is num
+        // Like  int a = 1 ...
+        if ( token == Num ) {
+            match( Num );
+
+            *++text   = IMM;
+            *++text   = token_val;
+            expr_type = INT;
+        }
+        // If token is string
+        // Like  char *flag;
+        // flag = "1234"; or flag = "1234"
+        //                          "5678";
+        // The second one is equal to flag = "12345678";
+        else if ( token == '"' ) {
+            *++text = IMM;
+            *++text = token_val;
+
+            match( '"' );
+
+            while ( token == '"' ) {
+                match( '"' );
+            }
+
+            data      = (char *)( ( (int)data + sizeof( int ) ) & ( -sizeof( int ) ) );
+            expr_type = PTR;
+        }
+        // If token is sizeof
+        // Bronya Compiler supports for:
+        // sizeof(int) sizeof(char) sizeof(*...)
+        else if ( token == Sizeof ) {
+            match( Sizeof );
+            match( '(' );
+            expr_type = INT;
+
+            if ( token == Int ) { match( Int ); }
+            else if ( token == Char ) {
+                match( Char );
+                expr_type = CHAR;
+            }
+
+            while ( token == Mul ) {
+                match( Mul );
+                expr_type = expr_type + PTR;
+            }
+
+            match( ')' );
+
+            *++text = IMM;
+            *++text = ( expr_type == CHAR ) ? sizeof( char ) : sizeof( int );
+
+            // sizeof(...) will return INT type
+            expr_type = INT;
+        }
+        // If token is variable or function
+        // Bronya Compiler supports three type Id:
+        // 1. Global/Local variable
+        // 2. Function
+        // 3. Enum
+        else if ( token == Id ) {
+            match( Id );
+
+            id = current_id;
+
+            // Function
+            if ( token == '(' ) {
+                match( '(' );
+
+                params = 0;
+                while ( token != ')' ) {
+                    expression( Assign );
+                    *++text = PUSH;
+                    params++;
+
+                    if ( token == ',' ) { match( ',' ); }
+                }
+
+                match( ')' );
+
+                // System functions
+                if ( id[Class] == Sys ) { *++text = id[Value]; }
+                else if ( id[Class] == Fun ) {
+                    *++text = CALL;
+                    *++text = id[Value];
+                }
+                else {
+                    printf( "%d: bad function call\n", line );
+                    exit( -1 );
+                }
+
+                // Erase the stackframe
+                if ( params > 0 ) {
+                    *++text = ADJ;
+                    *++text = params;
+                }
+            }
+            // Enum
+            else if ( id[Class] == Num ) {
+                *++text   = IMM;
+                *++text   = id[Value];
+                expr_type = INT;
+            }
+            // Global/Local variable
+            else {
+                if ( id[Class] == Loc ) {
+                    *++text = LEA;
+                    *++text = index_of_BP - id[Value];
+                }
+                else if ( id[Class] == Glo ) {
+                    *++text = IMM;
+                    *++text = id[Value];
+                }
+                else {
+                    printf( "%d: undefined variable\n", line );
+                    exit( -1 );
+                }
+
+                expr_type = id[Type];
+                *++text   = ( expr_type == Char ) ? LC : LI;
+            }
+        }
+        // Force type conversion
+        else if ( token == '(' ) {
+            match( '(' );
+
+            if ( token == Int || token == Char ) {
+                type = ( token == Char ) ? CHAR : INT;
+                match( token );
+
+                while ( token == Mul ) {
+                    match( Mul );
+                    type = type + PTR;
+                }
+
+                match( ')' );
+
+                expression( Inc );
+
+                expr_type = type;
+            }
+            else {
+                expression( Assign );
+                match( ')' );
+            }
+        }
+        // Pointer Value
+        else if ( token == Mul ) {
+            match( Mul );
+            expression( Inc );
+
+            if ( expr_type >= PTR ) { expr_type = expr_type - PTR; }
+            else {
+                printf( "%d: bad dereference\n", line );
+                exit( -1 );
+            }
+
+            *++text = ( expr_type == CHAR ) ? LC : LI;
+        }
+        // Get Address
+        else if ( token == And ) {
+            match( And );
+            expression( Inc );
+
+            if ( *text == LC || *text == LI ) { text--; }
+            else {
+                printf( "%d: bad address of\n", line );
+                exit( -1 );
+            }
+
+            expr_type = expr_type + PTR;
+        }
+        // Logic inversion
+        else if ( token == '!' ) {
+            match( '!' );
+            expression( Inc );
+
+            *++text = PUSH;
+            *++text = IMM;
+            *++text = 0;
+            *++text = EQ;
+
+            expr_type = INT;
+        }
+        // Bitwise inversion
+        else if ( token == '~' ) {
+            match( '-' );
+            expression( Inc );
+
+            *++text = PUSH;
+            *++text = IMM;
+            *++text = -1;
+            *++text = XOR;
+
+            expr_type = INT;
+        }
+        // Here we judge whether the number is positive or negative, not the
+        // addition or subtraction in the calculation.
+        else if ( token == Add ) {
+            match( Add );
+            expression( Inc );
+
+            expr_type = INT;
+        }
+        else if ( token == Sub ) {
+            match( Sub );
+
+            if ( token == Num ) {
+                *++text = IMM;
+                *++text = -token_val;
+                match( Num );
+            }
+            else {
+                *++text = IMM;
+                *++text = -1;
+                *++text = PUSH;
+                expression( Inc );
+                *++text = MUL;
+            }
+
+            expr_type = INT;
+        }
+        // Self-increasing and self-decreasing
+        else if ( token == Inc || token == Dec ) {
+            type = token;
+            match( token );
+            expression( Inc );
+
+            if ( *text == LC ) {
+                *text   = PUSH;
+                *++text = LC;
+            }
+            else if ( *text == LI ) {
+                *text   = PUSH;
+                *++text = LI;
+            }
+            else {
+                printf( "%d: bad lvalue of pre-increment\n", line );
+                exit( -1 );
+            }
+
+            *++text = PUSH;
+            *++text = IMM;
+
+            // If object is pointer
+            *++text = ( expr_type > PTR ) ? sizeof( int ) : sizeof( char );
+            *++text = ( type == Inc ) ? ADD : SUB;
+            *++text = ( expr_type == CHAR ) ? SC : SI;
+        }
+    }
+
+    while ( token >= level ) {
+        
     }
 }
 
@@ -439,6 +701,7 @@ void parameterDeclaration() {
     index_of_BP = params + 1;
 }
 
+// statement() is responsible for parsing the content
 void statement() {
     int *area_a, *area_b;
 
@@ -717,6 +980,7 @@ int eval() {
             AX = (int)( BP + *PC++ );
         } // it will fetch the parameter in the stack
 
+        // Operation
         else if ( option == OR ) {
             AX = *SP++ | AX;
         }
@@ -766,6 +1030,7 @@ int eval() {
             AX = *SP++ % AX;
         }
 
+        // Syscall
         else if ( option == OPEN ) {
             AX = open( (char *)SP[1], SP[0] );
         }
